@@ -382,10 +382,21 @@ try {
   check(/pockets|pocket/i.test(pot.message), 'HUD reports the pot', pot.message);
   const afterPot = await session.evaluate(`({
     group: window.__pool.game.players[0].group,
+    group2: window.__pool.game.players[1].group,
     turn: window.__pool.game.turn,
     open: window.__pool.game.openTable,
+    ballInHand: window.__pool.game.ballInHand,
+    badge1: document.getElementById('group1').textContent,
+    badge2: document.getElementById('group2').textContent,
+    card1: document.getElementById('player1').classList.contains('active'),
+    card2: document.getElementById('player2').classList.contains('active'),
   })`);
+  console.log('  hud after pot:', afterPot);
   check(afterPot.group === 'solids' && afterPot.turn === 0, 'shooter keeps shooting on solids', JSON.stringify(afterPot));
+  check(/solids/i.test(afterPot.badge1), 'left badge shows the shooter\'s group', afterPot.badge1);
+  check(/stripes/i.test(afterPot.badge2), 'right badge shows the opponent\'s group', afterPot.badge2);
+  check(afterPot.card1 && !afterPot.card2, 'shooter stays highlighted, opponent is not');
+  check(afterPot.ballInHand === false, 'a legal pot does not give ball in hand');
 
   console.log('\n— ball in hand after a scratch ——————');
   await session.evaluate(`(() => {
@@ -409,6 +420,30 @@ try {
   console.log(scratch);
   check(scratch.mode === 'placing', 'scratch puts the game in placement mode', scratch.mode);
   check(scratch.ballInHand === true && scratch.cueActive === true, 'cue ball is back with ball in hand');
+  const held = await session.evaluate(`(() => {
+    const p = window.__pool;
+    const meshes = [];
+    p.scene.traverse(o => { if (o.isMesh && o.userData.ballId !== undefined && o.visible) meshes.push(o.userData.ballId); });
+    return { visibleBalls: meshes.length, cueMeshVisible: p.ballMeshes.get(0).visible };
+  })()`);
+  console.log('  while placing:', held);
+  check(held.cueMeshVisible === false, 'cue ball is held in hand, not lying on the cloth too');
+
+  // the same must hold for a foul where the cue ball was never potted
+  await session.evaluate(`(() => {
+    const p = window.__pool;
+    p.resetGame();
+    p.game.breakDone = true;
+    p.game.ballInHand = true;
+    p.state.mode = 'placing';
+  })()`);
+  await sleep(400);
+  const held2 = await session.evaluate(`(() => {
+    const p = window.__pool;
+    return { cuePotted: p.world.cue.potted, cueMeshVisible: p.ballMeshes.get(0).visible };
+  })()`);
+  console.log('  foul without scratch:', held2);
+  check(held2.cueMeshVisible === false, 'unpotted cue ball is lifted off the cloth while in hand');
   const placePt = await screenOf(session, -0.5, 0.25);
   await session.mouse('mouseMoved', placePt.x, placePt.y, 'none');
   await sleep(200);
@@ -503,6 +538,33 @@ try {
     );
     check(r.buttY > 0.062, `cue butt clears the rail (${c.label})`, `buttY=${r.buttY}`);
     check(Math.abs(r.tipY - 0.0286) < 0.02, `cue tip still meets the ball (${c.label})`, `tipY=${r.tipY}`);
+
+    // regression: the cue must be drawn back along its own axis, never sideways
+    const tipAt = async (power) => {
+      await session.evaluate(`window.__pool.state.power = ${power}`);
+      await sleep(220);
+      return session.evaluate(`(() => {
+        const p = window.__pool, T = p.THREE;
+        const st = p.cueStick;
+        const axis = new T.Vector3(0, 1, 0).applyQuaternion(st.quaternion).normalize();
+        const tip = new T.Vector3(0, st.userData.tipY, 0).applyQuaternion(st.quaternion).add(st.position);
+        return { tip: [tip.x, tip.y, tip.z], axis: [axis.x, axis.y, axis.z] };
+      })()`);
+    };
+    const p0 = await tipAt(0);
+    const p1 = await tipAt(1);
+    const d = [p1.tip[0] - p0.tip[0], p1.tip[1] - p0.tip[1], p1.tip[2] - p0.tip[2]];
+    const ax = p0.axis;
+    const moved = Math.hypot(...d);
+    const along = d[0] * ax[0] + d[1] * ax[1] + d[2] * ax[2];
+    const sideways = Math.sqrt(Math.max(0, moved * moved - along * along));
+    console.log(
+      `    pull-back: moved ${moved.toFixed(4)}m, along axis ${along.toFixed(4)}m, sideways ${sideways.toFixed(5)}m`,
+    );
+    check(moved > 0.25, `cue pulls back a visible distance (${c.label})`, `${moved.toFixed(3)}m`);
+    check(sideways < 0.002, `cue pulls back along its own axis (${c.label})`, `sideways=${sideways.toFixed(5)}m`);
+    await session.evaluate('window.__pool.state.power = 0');
+    await sleep(150);
   }
 
   console.log('\n— camera modes & re-rack —————————————');

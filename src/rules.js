@@ -59,6 +59,34 @@ export class EightBallGame {
       .map((b) => b.id);
   }
 
+  /**
+   * Balls of a player's group that were on the table when the shot was struck.
+   *
+   * A shot is judged *after* it finished, and by then a ball the shooter hit
+   * first and potted is already off the table. Judging legality against the
+   * current table would wrongly call potting your own ball a foul.
+   */
+  targetsAtShotStart(playerIndex, shot = this.world.shot) {
+    const g = this.players[playerIndex].group;
+    if (!g || this.openTable) return [];
+    const pottedThisShot = shot ? shot.potted : [];
+    return this.world.balls
+      .filter(
+        (b) =>
+          (b.active || (pottedThisShot.includes(b.id) && b.id !== 0)) &&
+          groupOfBall(b.id) === g,
+      )
+      .map((b) => b.id);
+  }
+
+  /** Ball ids the shooter was allowed to contact first, as of the strike. */
+  requiredFirstHitAtShotStart(shot = this.world.shot) {
+    const p = this.currentPlayer;
+    if (this.openTable || !p.group) return null;
+    const remaining = this.targetsAtShotStart(this.turn, shot);
+    return remaining.length === 0 ? 8 : remaining;
+  }
+
   /** The ball id the shooter must contact first (null = anything legal). */
   requiredFirstHit() {
     const p = this.currentPlayer;
@@ -103,7 +131,7 @@ export class EightBallGame {
         setFoul('illegal break — not enough balls reached a rail');
       }
     } else if (!this.openTable && player.group) {
-      const need = this.requiredFirstHit();
+      const need = this.requiredFirstHitAtShotStart(shot);
       const needed = Array.isArray(need) ? need : [need];
       if (!needed.includes(shot.firstHit)) {
         setFoul(
@@ -133,7 +161,9 @@ export class EightBallGame {
         this.applyFoulOrPass(foul, false, cuePotted, isBreak);
         return this.finish(foul, foulReason, false, null, potted);
       }
-      const cleared = player.group ? this.targetsFor(this.turn).length === 0 : false;
+      // "cleared" must mean cleared before this stroke: potting your last
+      // group ball and the 8 on the same shot does not win the game
+      const cleared = this.requiredFirstHitAtShotStart(shot) === 8;
       if (!player.group || this.openTable) {
         won = opponent.index; // potting the 8 on an open table loses
         this.message = `${player.name} pocketed the 8-ball too early.`;

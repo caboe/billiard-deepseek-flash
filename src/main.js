@@ -154,12 +154,13 @@ const contactRing = new THREE.Mesh(
 contactRing.rotation.x = -Math.PI / 2;
 aimGroup.add(aimLine, aimLineSoft, ghostBall, contactRing);
 
+// stands in for the cue ball while it is held in hand
 const placeGhost = new THREE.Mesh(
   new THREE.SphereGeometry(BALL_RADIUS, 24, 16),
   new THREE.MeshBasicMaterial({
-    color: 0x6bff9e,
+    color: 0xeef4ff,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.5,
     depthWrite: false,
   }),
 );
@@ -254,7 +255,7 @@ function updateAimVisuals() {
   // player cueing off the cushion.
   const right = new THREE.Vector3(-dir.z, 0, dir.x);
   const tipY = cueStick.userData.tipY;
-  const pull = 0.055 + state.power * 0.34;
+  const pull = 0.028 + state.power * 0.34;
   const tipOffset = state.spin.x * BALL_RADIUS * 0.8;
   const tipHeight = state.spin.y * BALL_RADIUS * 0.8;
   const offsetLen = Math.hypot(tipOffset, tipHeight);
@@ -275,12 +276,17 @@ function updateAimVisuals() {
     dir.z * Math.cos(elev),
   ).normalize();
 
-  // where the tip touches the ball, then step back along the axis to the butt
-  const tipPos = cuePos
+  // The tip touches the ball here (offset for english), and the stick is
+  // withdrawn along ITS OWN axis — not along the horizontal aim line — so the
+  // cue slides straight back the way it is pointing instead of drifting
+  // sideways as it is pulled back.
+  const contact = cuePos
     .clone()
-    .addScaledVector(dir, -(alongBall + pull))
+    .addScaledVector(dir, -alongBall)
     .addScaledVector(right, tipOffset);
-  tipPos.y = BALL_RADIUS + tipHeight;
+  contact.y = BALL_RADIUS + tipHeight;
+
+  const tipPos = contact.clone().addScaledVector(axis, -pull);
 
   cueStick.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
   cueStick.position.copy(tipPos).addScaledVector(axis, -tipY);
@@ -373,7 +379,7 @@ function onPointerMove(e) {
     const ok = game.canPlaceCue(p.x, p.z);
     state.ghostValid = ok;
     placeGhost.position.set(p.x, BALL_RADIUS, p.z);
-    placeGhost.material.color.setHex(ok ? 0x6bff9e : 0xff6b6b);
+    placeGhost.material.color.setHex(ok ? 0xeef4ff : 0xff5a4d);
     return;
   }
   if (state.mode !== 'aim') return;
@@ -719,6 +725,13 @@ function syncBalls(dt) {
     if (ball.potted) {
       mesh.position.set(ball.x, BALL_RADIUS + ball.sinkY, ball.z);
       if (ball.sinkT > 0.42) mesh.visible = false;
+      continue;
+    }
+    // With ball in hand the cue ball is *in the player's hand*: hide the ball
+    // that is still parked on the cloth and let the placement ghost stand in
+    // for it, otherwise the table shows two cue balls at once.
+    if (ball.isCue && state.mode === 'placing') {
+      mesh.visible = false;
       continue;
     }
     // a ball that was pocketed and then put back on the table must reappear

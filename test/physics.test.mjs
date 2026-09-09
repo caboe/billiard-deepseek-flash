@@ -360,6 +360,99 @@ test('groups are assigned by the first legal pot after the break', () => {
   assert.equal(g.turn, 1, 'potting a ball keeps the shooter at the table');
 });
 
+test('potting the ball you hit first is not a foul (regression)', () => {
+  // The shot is judged after it finished, when the ball that was struck first
+  // is already off the table. That must not be mistaken for a wrong-ball foul.
+  const { w, g } = freshGame();
+  g.breakDone = true;
+  g.players[0].group = SOLIDS;
+  g.players[1].group = STRIPES;
+  g.openTable = false;
+  const b3 = w.ball(3);
+  b3.active = false;
+  b3.potted = true;
+  w.shot = {
+    firstHit: 3,
+    railAfterContact: true,
+    railBalls: new Set([3]),
+    potted: [3],
+    contacts: 1,
+  };
+  const r = g.evaluateShot();
+  assert.equal(r.foul, false, r.foulReason);
+  assert.equal(r.continueTurn, true);
+  assert.equal(g.turn, 0, 'the shooter keeps the table');
+  assert.equal(g.ballInHand, false, 'no ball in hand for a legal pot');
+});
+
+test('the first pot still assigns groups when it is the ball struck first', () => {
+  const { w, g } = freshGame();
+  g.breakDone = true;
+  const b3 = w.ball(3);
+  b3.active = false;
+  b3.potted = true;
+  w.shot = {
+    firstHit: 3,
+    railAfterContact: true,
+    railBalls: new Set([3]),
+    potted: [3],
+    contacts: 1,
+  };
+  const r = g.evaluateShot();
+  assert.equal(r.foul, false);
+  assert.equal(g.players[0].group, SOLIDS, 'shooter takes solids');
+  assert.equal(g.players[1].group, STRIPES);
+  assert.equal(g.turn, 0);
+  assert.equal(r.continueTurn, true);
+});
+
+test('potting your last group ball and the 8 on one stroke loses', () => {
+  const { w, g } = freshGame();
+  g.breakDone = true;
+  g.players[0].group = SOLIDS;
+  g.players[1].group = STRIPES;
+  g.openTable = false;
+  for (const b of w.balls) if (groupOfBall(b.id) === SOLIDS) b.active = false;
+  const seven = w.ball(7);
+  seven.active = false;
+  seven.potted = true;
+  const eight = w.ball(8);
+  eight.active = false;
+  eight.potted = true;
+  w.shot = {
+    firstHit: 7,
+    railAfterContact: true,
+    railBalls: new Set([7]),
+    potted: [7, 8],
+    contacts: 2,
+  };
+  g.evaluateShot();
+  assert.equal(g.gameOver, true);
+  assert.equal(g.winner, 1, 'the opponent wins');
+});
+
+test('hitting an opponent ball first and potting your own is still a foul', () => {
+  const { w, g } = freshGame();
+  g.breakDone = true;
+  g.players[0].group = SOLIDS;
+  g.players[1].group = STRIPES;
+  g.openTable = false;
+  const b3 = w.ball(3);
+  b3.active = false;
+  b3.potted = true;
+  w.shot = {
+    firstHit: 11, // a stripe was contacted first
+    railAfterContact: true,
+    railBalls: new Set([11, 3]),
+    potted: [3],
+    contacts: 2,
+  };
+  const r = g.evaluateShot();
+  assert.equal(r.foul, true);
+  assert.equal(g.turn, 1);
+  assert.equal(g.ballInHand, true);
+});
+
 test('hitting the wrong group first is a foul and gives ball in hand', () => {
   const { w, g } = freshGame();
   g.players[0].group = SOLIDS;

@@ -54,6 +54,11 @@ Standard bar/BCA-flavoured 8-ball:
   hand behind the head string.
 - **8-ball** — potting it before clearing your group loses, potting it legally
   wins, potting it on the break re-spots it, and fouling while potting it loses.
+  The 8 must be potted on a *separate* stroke: dropping it together with your
+  last group ball is a loss.
+- **Judged at the strike** — legality is checked against the table as it looked
+  when the cue ball was struck, not after everything stopped. Potting the ball
+  you hit first is therefore a legal shot, not a foul.
 
 ## The physics
 
