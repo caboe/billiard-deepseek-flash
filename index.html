@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>8-Ball — 3D Billiards</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23141418'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23f4f2ec'/%3E%3Ctext x='16' y='21' font-size='11' font-family='sans-serif' font-weight='bold' text-anchor='middle' fill='%23141418'%3E8%3C/text%3E%3C/svg%3E" />
+    <style>
+      :root {
+        --panel: rgba(16, 19, 24, 0.72);
+        --panel-strong: rgba(12, 14, 18, 0.9);
+        --line: rgba(255, 255, 255, 0.1);
+        --text: #eef2f7;
+        --muted: #8b97a8;
+        --accent: #58c8ff;
+        --gold: #f0c419;
+        --green: #35d07f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #06070a;
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto,
+          'Helvetica Neue', Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        touch-action: none;
+      }
+
+      #scene {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        cursor: crosshair;
+      }
+
+      body.placing #scene {
+        cursor: pointer;
+      }
+
+      /* subtle vignette so the table pops */
+      #vignette {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse at 50% 45%,
+          rgba(0, 0, 0, 0) 42%,
+          rgba(0, 0, 0, 0.45) 100%
+        );
+        z-index: 1;
+      }
+
+      #hud {
+        position: fixed;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 16px 18px 14px;
+      }
+
+      .row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .row.bottom {
+        align-items: flex-end;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        backdrop-filter: blur(14px) saturate(140%);
+        -webkit-backdrop-filter: blur(14px) saturate(140%);
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+      }
+
+      /* ---------- player cards ---------- */
+
+      .player {
+        padding: 10px 14px;
+        min-width: 210px;
+        max-width: 260px;
+        transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+        opacity: 0.62;
+      }
+
+      .player.active {
+        opacity: 1;
+        border-color: rgba(88, 200, 255, 0.65);
+        box-shadow: 0 0 0 1px rgba(88, 200, 255, 0.25), 0 12px 34px rgba(0, 0, 0, 0.5),
+          0 0 34px rgba(88, 200, 255, 0.18);
+      }
+
+      .player.right {
+        text-align: right;
+      }
+
+      .player .name {
+        font-size: 15px;
+        font-weight: 650;
+        letter-spacing: 0.2px;
+      }
+
+      .badge {
+        display: inline-block;
+        margin-top: 5px;
+        padding: 2px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--muted);
+      }
+
+      .badge.solids {
+        background: rgba(240, 196, 25, 0.16);
+        color: #ffd75e;
+      }
+
+      .badge.stripes {
+        background: rgba(88, 200, 255, 0.16);
+        color: #8fdcff;
+      }
+
+      .badge.open {
+        background: rgba(255, 255, 255, 0.07);
+        color: #a8b4c4;
+      }
+
+      .tray {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+        min-height: 18px;
+      }
+
+      .player.right .tray {
+        justify-content: flex-end;
+      }
+
+      .chip {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        font-size: 10px;
+        font-weight: 700;
+        color: #10131a;
+        text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+        box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(0, 0, 0, 0.25);
+      }
+
+      .chip-sm {
+        width: 15px;
+        height: 15px;
+        font-size: 9px;
+      }
+
+      .chip.eight {
+        background: #1a1a20 !important;
+        color: #fff;
+      }
+
+      /* ---------- centre message ---------- */
+
+      .centre {
+        position: absolute;
+        top: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        max-width: 44vw;
+        pointer-events: none;
+      }
+
+      #message {
+        font-size: 19px;
+        font-weight: 680;
+        letter-spacing: 0.2px;
+        text-shadow: 0 2px 18px rgba(0, 0, 0, 0.85);
+      }
+
+      #detail {
+        margin-top: 3px;
+        font-size: 13px;
+        color: #a9b6c6;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+      }
+
+      /* ---------- bottom bar ---------- */
+
+      .bottom-left,
+      .bottom-right {
+        pointer-events: auto;
+      }
+
+      .power {
+        padding: 11px 13px;
+        width: 232px;
+      }
+
+      .power .label {
+        display: flex;
+        justify-content: space-between;
+        font-size: 11px;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 7px;
+      }
+
+      .power .track {
+        height: 9px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.09);
+        overflow: hidden;
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+      }
+
+      #powerFill {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #35d07f, #f0c419 55%, #ff5a4d);
+        transition: width 0.05s linear;
+      }
+
+      .english {
+        padding: 11px 13px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      #englishPad {
+        position: relative;
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #ffffff 0%, #d9dbe0 55%, #9aa0a8 100%);
+        box-shadow: inset -3px -5px 12px rgba(0, 0, 0, 0.28), 0 3px 10px rgba(0, 0, 0, 0.5);
+        cursor: grab;
+        touch-action: none;
+        flex: none;
+      }
+
+      #englishPad:active {
+        cursor: grabbing;
+      }
+
+      #englishPad::before,
+      #englishPad::after {
+        content: '';
+        position: absolute;
+        background: rgba(0, 0, 0, 0.12);
+      }
+
+      #englishPad::before {
+        left: 50%;
+        top: 8%;
+        bottom: 8%;
+        width: 1px;
+      }
+
+      #englishPad::after {
+        top: 50%;
+        left: 8%;
+        right: 8%;
+        height: 1px;
+      }
+
+      #englishDot {
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        margin: -7px 0 0 -7px;
+        border-radius: 50%;
+        background: #2f6fb5;
+        border: 2px solid rgba(255, 255, 255, 0.9);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55);
+        pointer-events: none;
+      }
+
+      .english .meta {
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .english .meta strong {
+        display: block;
+        color: var(--text);
+        font-size: 12px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+
+      #englishReset {
+        margin-top: 5px;
+        padding: 3px 8px;
+        font-size: 10px;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      #englishReset:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      /* ---------- centre bottom ---------- */
+
+      .bottom-centre {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+      }
+
+      #turnLabel {
+        font-size: 14px;
+        font-weight: 600;
+        padding: 7px 16px;
+        border-radius: 999px;
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+      }
+
+      #hint {
+        font-size: 11.5px;
+        color: var(--muted);
+        text-align: center;
+        max-width: 460px;
+        line-height: 1.5;
+      }
+
+      .buttons {
+        display: flex;
+        gap: 6px;
+      }
+
+      .buttons button {
+        pointer-events: auto;
+        padding: 6px 11px;
+        font-size: 11.5px;
+        font-weight: 600;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        backdrop-filter: blur(10px);
+        transition: background 0.2s, transform 0.12s;
+      }
+
+      .buttons button:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+
+      .buttons button:active {
+        transform: translateY(1px);
+      }
+
+      /* ---------- potted tray ---------- */
+
+      .potted {
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--muted);
+        max-width: 330px;
+        flex-wrap: wrap;
+      }
+
+      .potted .muted {
+        opacity: 0.75;
+      }
+
+      /* ---------- overlay ---------- */
+
+      #overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        display: grid;
+        place-items: center;
+        background: rgba(4, 5, 8, 0.72);
+        backdrop-filter: blur(6px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.35s ease;
+      }
+
+      #overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .overlay-card {
+        text-align: center;
+        padding: 34px 46px;
+        border-radius: 20px;
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+      }
+
+      #overlayTitle {
+        font-size: 30px;
+        font-weight: 750;
+        letter-spacing: -0.4px;
+      }
+
+      #overlayText {
+        margin: 10px 0 22px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      #playAgain {
+        padding: 11px 26px;
+        font-size: 14px;
+        font-weight: 650;
+        border-radius: 12px;
+        border: 1px solid rgba(88, 200, 255, 0.5);
+        background: linear-gradient(180deg, #2f8fd0, #1f6ba3);
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 10px 26px rgba(31, 107, 163, 0.45);
+      }
+
+      #playAgain:hover {
+        filter: brightness(1.08);
+      }
+
+      @media (max-width: 780px) {
+        .player {
+          min-width: 132px;
+          max-width: 152px;
+          padding: 8px 10px;
+        }
+        .player .name {
+          font-size: 13px;
+        }
+        #message {
+          font-size: 15px;
+        }
+        .centre {
+          max-width: 60vw;
+        }
+        .power {
+          width: 160px;
+        }
+        #englishPad {
+          width: 54px;
+          height: 54px;
+        }
+        #hint,
+        .potted {
+          display: none;
+        }
+      }
+    </style>
+
+    <!-- three.js r160 is vendored in ./vendor so the game runs offline -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.js",
+          "three/addons/": "./vendor/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="vignette"></div>
+
+    <div id="hud">
+      <div class="row">
+        <div class="panel player left" id="player1">
+          <div class="name" id="name1">Player 1</div>
+          <span class="badge open" id="group1">Open table</span>
+          <div class="tray" id="tray1"></div>
+        </div>
+
+        <div class="centre">
+          <div id="message">Break to start.</div>
+          <div id="detail"></div>
+        </div>
+
+        <div class="panel player right" id="player2">
+          <div class="name" id="name2">Player 2</div>
+          <span class="badge open" id="group2">Open table</span>
+          <div class="tray" id="tray2"></div>
+        </div>
+      </div>
+
+      <div class="row bottom">
+        <div class="bottom-left">
+          <div class="panel power">
+            <div class="label"><span>Power</span><span id="powerPct">0%</span></div>
+            <div class="track"><div id="powerFill"></div></div>
+          </div>
+        </div>
+
+        <div class="bottom-centre">
+          <div id="turnLabel">Player 1 to shoot</div>
+          <div id="hint"></div>
+          <div class="buttons">
+            <button id="camBtn" title="Cycle camera (C)"><span id="camLabel">Camera: orbit</span></button>
+            <button id="muteBtn" title="Mute (M)">🔊</button>
+            <button id="resetBtn" title="Re-rack (R)">Re-rack</button>
+          </div>
+        </div>
+
+        <div class="bottom-right">
+          <div class="panel english">
+            <div id="englishPad"><div id="englishDot"></div></div>
+            <div class="meta">
+              <strong>Cue tip</strong>
+              Drag to add english
+              <br />
+              <button id="englishReset">Centre</button>
+            </div>
+          </div>
+          <div class="panel potted" id="potted"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="overlay">
+      <div class="overlay-card">
+        <div id="overlayTitle">Player 1 wins!</div>
+        <div id="overlayText"></div>
+        <button id="playAgain">Rack &amp; play again</button>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

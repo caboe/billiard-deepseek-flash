@@ -1,0 +1,12 @@
+{
+  "name": "billiard-deepseek-flash",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "3D 8-ball billiards game — three.js rendering with a custom rigid-body physics engine",
+  "scripts": {
+    "start": "node serve.js",
+    "dev": "node serve.js",
+    "test": "node --test test/physics.test.mjs"
+  }
+}
